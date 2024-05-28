@@ -1,3 +1,64 @@
+# Writeup
+
+### Step 1: Sensor Noise:
+
+Simulator was run with scenario 06_NoisySensors. GPS X and IMU Accelerometer X data were recorded to files `config/log/Graph1.txt` and `config/log/Graph2.txt` respectively.
+![scenario_1_failed](writeup/scenario_1_failed.jpg)
+![scenario_1_console_failed](writeup/scenario_1_console_failed.jpg)
+
+The standard deviation of the GPS X signal and the IMU Accelerometer X signal were calculated using `utils/standart_deviation.py` script.
+![scenario_1_deviation_console](writeup/scenario_1_deviation_console.jpg)
+The values were then updated in the `config/6_Sensornoise.txt` file.
+
+The simulator was then run again to verify that the standard deviations accurately capture the value of approximately 68% of the respective measurements.
+![scenario_1](writeup/scenario_1.jpg)
+![scenario_1_console](writeup/scenario_1_console.jpg)
+
+### Step 2: Attitude Estimation:
+function `UpdateFromIMU()` in `QuadEstimatorEKF.cpp` was updated to implement a better rate gyro attitude integration scheme.
+![scenario_2](writeup/scenario_2.jpg)
+![scenario_2_console](writeup/scenario_2_console.jpg)
+
+### Step 3: Prediction Step:
+function `PredictState()` in `QuadEstimatorEKF.cpp` was updated to implement the state prediction step.
+![scenario_3](writeup/scenario_3.jpg)
+
+function `GetRbgPrime()` was implemented to calculate the partial derivative of the body-to-global rotation matrix.
+function `Predict()` was updated to implement the rest of the prediction step.
+parameters `QPosXYStd` and `QVelXYStd` in `QuadEstimatorEKF.txt` were tuned to capture the magnitude of the error.
+ - `QPosXYStd = 0.02`
+ - `QVelXYStd = 0.25`
+
+![scenario_3_1](writeup/scenario_3_1.jpg)
+
+### Step 4: Magnetometer Update:
+function `UpdateFromMag()` in `QuadEstimatorEKF.cpp` was updated to implement the magnetometer update.
+parameter `QYawStd` in `QuadEstimatorEKF.txt` was tuned to balance between the long term drift and short-time noise from the magnetometer.
+ - `QYawStd = 0.12`
+
+![scenario_4](writeup/scenario_4.jpg)
+![scenario_4_console](writeup/scenario_4_console.jpg)
+
+### Step 5: Closed Loop + GPS Update:
+function `UpdateFromGPS()` in `QuadEstimatorEKF.cpp` was updated to implement the EKF GPS Update.
+
+![scenario_5](writeup/scenario_5.jpg)
+![scenario_5_console](writeup/scenario_5_console.jpg)
+
+### Step 6: Adding Your Controller:
+`QuadController.cpp` and `QuadControlParams.txt` were updated with the controller and control parameters from the last project.
+The simulator was run with scenario 11_GPSUpdate to test the controller.
+parameters `KiPosZ`, `kpVelXY`, `kpVelZ`, `kpBank`, `kpYaw`, `kpPQR` in `QuadControlParams.txt` were tuned to stabilize the controller.
+ - `KiPosZ` = 40 _(old value was 50)_
+ - `kpVelXY` = 12 _(old value was 10)_
+ - `kpVelZ` = 9 _(old value was 10)_
+ - `kpBank` = 14 _(old value was 16)_
+ - `kpYaw` = 2 _(old value was 4)_
+ - `kpPQR` = 95, 95, 4 _(old values were 95, 95, 6)_
+
+![scenario_6](writeup/scenario_6.jpg)
+![scenario_6_console](writeup/scenario_6_console.jpg)
+
 # Estimation Project #
 
 Welcome to the estimation project.  In this project, you will be developing the estimation portion of the controller used in the CPP simulator.  By the end of the project, your simulated quad will be flying with your estimator and your custom controller (from the previous project)!

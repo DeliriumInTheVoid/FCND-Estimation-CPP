@@ -93,13 +93,14 @@ void QuadEstimatorEKF::UpdateFromIMU(V3F accel, V3F gyro)
   // (replace the code below)
   // make sure you comment it out when you add your own code -- otherwise e.g. you might integrate yaw twice
 
-  float predictedPitch = pitchEst + dtIMU * gyro.y;
-  float predictedRoll = rollEst + dtIMU * gyro.x;
-  ekfState(6) = ekfState(6) + dtIMU * gyro.z;	// yaw
+  auto const yaw_est{ ekfState(6) };
 
-  // normalize yaw to -pi .. pi
-  if (ekfState(6) > F_PI) ekfState(6) -= 2.f*F_PI;
-  if (ekfState(6) < -F_PI) ekfState(6) += 2.f*F_PI;
+  auto attitude_qt = Quaternion<float>::FromEuler123_RPY(rollEst, pitchEst, yaw_est);
+  attitude_qt.IntegrateBodyRate(gyro, dtIMU);
+
+  auto const predictedPitch{ attitude_qt.Pitch() };
+  auto const predictedRoll{ attitude_qt.Roll() };
+  ekfState(6) = fmodf(attitude_qt.Yaw() + F_PI, 2. * F_PI) - F_PI; //predicted_yaw;
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -162,6 +163,15 @@ VectorXf QuadEstimatorEKF::PredictState(VectorXf curState, float dt, V3F accel, 
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+  predictedState(0) += curState(3) * dt; // x
+  predictedState(1) += curState(4) * dt; // y
+  predictedState(2) += curState(5) * dt; // z
+
+  auto const acc_inertial{ attitude.Rotate_BtoI(accel) }; // acceleration in inertial frame
+  predictedState(3) += acc_inertial.x * dt; // velocity x
+  predictedState(4) += acc_inertial.y * dt; // velocity y
+  predictedState(5) += static_cast<float>((acc_inertial.z - CONST_GRAVITY) * dt); // velocity z (gravity is already included in the acceleration)
+  //predictedState(6) == curState(6), skip yaw integration
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -189,6 +199,18 @@ MatrixXf QuadEstimatorEKF::GetRbgPrime(float roll, float pitch, float yaw)
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+  //theta - pitch, phi - roll, psi - yaw
+  RbgPrime(0, 0) = -cos(pitch) * sin(yaw);
+  RbgPrime(0, 1) = -sin(roll) * sin(pitch) * sin(yaw) - cos(roll) * cos(yaw);
+  RbgPrime(0, 2) = -cos(roll) * sin(pitch) * sin(yaw) + sin(roll) * cos(yaw);
+
+  RbgPrime(1, 0) = cos(pitch) * cos(yaw);
+  RbgPrime(1, 1) = sin(roll) * sin(pitch) * cos(yaw) - cos(roll) * sin(yaw);
+  RbgPrime(1, 2) = cos(roll) * sin(pitch) * cos(yaw) + sin(roll) * sin(yaw);
+
+  RbgPrime(2, 0) = 0.0f;
+  RbgPrime(2, 1) = 0.0f;
+  RbgPrime(2, 2) = 0.0f;
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -235,6 +257,22 @@ void QuadEstimatorEKF::Predict(float dt, V3F accel, V3F gyro)
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+  VectorXf u(3);
+  u(0) = accel.x;
+  u(1) = accel.y;
+  u(2) = accel.z;
+
+  gPrime(0, 3) = dt;
+  gPrime(1, 4) = dt;
+  gPrime(2, 5) = dt;
+
+  const VectorXf RbgP_u_dt = RbgPrime * u * dt;
+
+  gPrime(3, 6) = RbgP_u_dt(0);
+  gPrime(4, 6) = RbgP_u_dt(1);
+  gPrime(5, 6) = RbgP_u_dt(2);
+
+  ekfCov = gPrime * ekfCov * gPrime.transpose() + Q;
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -260,6 +298,14 @@ void QuadEstimatorEKF::UpdateFromGPS(V3F pos, V3F vel)
   //  - this is a very simple update
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+  //the partial derivative is the identity matrix, augmented with a vector of zeros
+  hPrime.setIdentity();
+
+  auto const size{ static_cast<int>(zFromX.size()) };
+  for (int i = 0; i < size; i++)
+  {
+      zFromX(i) = ekfState(i);
+  }
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
   Update(z, hPrime, R_GPS, zFromX);
@@ -281,7 +327,20 @@ void QuadEstimatorEKF::UpdateFromMag(float magYaw)
   //  - The magnetomer measurement covariance is available in member variable R_Mag
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+  //since this is linear, the derivative is a matrix of zeros and ones
+  hPrime(0, 6) = 1.0f;
 
+  auto const estimated_yaw{ ekfState(6) };
+  auto const yaw_diff{ estimated_yaw - magYaw };
+
+  zFromX(0) = estimated_yaw;
+
+  if (yaw_diff > F_PI) {
+      zFromX(0) -= 2.0f * F_PI;
+  }
+  else if (yaw_diff < -F_PI) {
+      zFromX(0) += 2.0f * F_PI;
+  }
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
   Update(z, hPrime, R_Mag, zFromX);
